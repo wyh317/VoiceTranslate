@@ -3,89 +3,82 @@ import com.microsoft.cognitiveservices.speech.*;
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 import com.microsoft.cognitiveservices.speech.translation.*;
 
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.Map;
 
 public class VoiceTranslate {
-        public static void main(String[] args) throws InterruptedException, ExecutionException {
-            System.setProperty("file.encoding", "UTF-8");
-            String speechKey = "e911869294294d8e8edc28cd9a001d49";
-            String speechRegion = "eastus";
-            SpeechTranslationConfig speechTranslationConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion);
-            speechTranslationConfig.setSpeechRecognitionLanguage("en-US");
+        private String speechKey;
+        private String speechRegion;
 
-            String[] toLanguages = { "zh-CN" };
-            for (String language : toLanguages) {
-                speechTranslationConfig.addTargetLanguage(language);
-            }
-            String text = recognizeFromMicrophone(speechTranslationConfig);
-            textToVoice(text);
+        private SpeechTranslationConfig speechTranslationConfig;
+
+        public VoiceTranslate(String speechKey, String speechRegion){
+            this.speechRegion = speechRegion;
+            this.speechKey = speechKey;
+        }
+        public static void main(String[] args) throws InterruptedException, ExecutionException, IOException {
+            Properties properties = new Properties();
+            properties.load(new FileReader("src\\main\\resources\\config.properties"));
+
+            String speechKey = properties.getProperty("apiKey");
+            String speechRegion = properties.getProperty("region");
+
+            String originLanguage = args[0];
+            String translateToLanguage = args[1];
+            String voiceName = args[2];
+
+            VoiceTranslate voiceTranslate = new VoiceTranslate(speechKey, speechRegion);
+            String translatedText = voiceTranslate.recognizeFromMicrophone(originLanguage, translateToLanguage);
+            voiceTranslate.textToVoice(translatedText, voiceName);
         }
 
-        public static String recognizeFromMicrophone(SpeechTranslationConfig speechTranslationConfig) throws InterruptedException, ExecutionException {
-            AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
-            TranslationRecognizer translationRecognizer = new TranslationRecognizer(speechTranslationConfig, audioConfig);
+    public String recognizeFromMicrophone(String originLanguage, String translateToLanguage) {
+        AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
+        SpeechTranslationConfig speechTranslationConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion);
+        speechTranslationConfig.setSpeechRecognitionLanguage(originLanguage);
+        speechTranslationConfig.addTargetLanguage(translateToLanguage);
+        TranslationRecognizer translationRecognizer = new TranslationRecognizer(speechTranslationConfig, audioConfig);
 
-            System.out.println("Speak into your microphone.");
-            Future<TranslationRecognitionResult> task = translationRecognizer.recognizeOnceAsync();
+        System.out.println("Speak into your microphone with the origin language.");
+        Future<TranslationRecognitionResult> task = translationRecognizer.recognizeOnceAsync();
+        try {
             TranslationRecognitionResult translationRecognitionResult = task.get();
-            String text = "";
             if (translationRecognitionResult.getReason() == ResultReason.TranslatedSpeech) {
-                System.out.println("RECOGNIZED: Text=" + translationRecognitionResult.getText());
-                for (Map.Entry<String, String> pair : translationRecognitionResult.getTranslations().entrySet()) {
-                    System.out.printf("Translated into '%s': %s\n", pair.getKey(), pair.getValue());
-                    text = pair.getValue();
-                }
+                System.out.println("Voice in origin language: " + translationRecognitionResult.getText());
+                Map.Entry<String, String> pair = translationRecognitionResult.getTranslations().entrySet().iterator().next();
+                return pair.getValue();
+            } else{
+                System.out.println("Speech could not be recognized.");
             }
-            else if (translationRecognitionResult.getReason() == ResultReason.NoMatch) {
-                System.out.println("NOMATCH: Speech could not be recognized.");
-            }
-            else if (translationRecognitionResult.getReason() == ResultReason.Canceled) {
-                CancellationDetails cancellation = CancellationDetails.fromResult(translationRecognitionResult);
-                System.out.println("CANCELED: Reason=" + cancellation.getReason());
-
-                if (cancellation.getReason() == CancellationReason.Error) {
-                    System.out.println("CANCELED: ErrorCode=" + cancellation.getErrorCode());
-                    System.out.println("CANCELED: ErrorDetails=" + cancellation.getErrorDetails());
-                    System.out.println("CANCELED: Did you set the speech resource key and region values?");
-                }
-            }
-
-            return text;
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
         }
+        return null;
+    }
 
-
-    public static void textToVoice(String text) throws ExecutionException, InterruptedException {
-        String speechKey = "e911869294294d8e8edc28cd9a001d49";
-        String speechRegion = "eastus";
-        SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
-
-        speechConfig.setSpeechSynthesisVoiceName("zh-CN-XiaochenNeural");
-
-        SpeechSynthesizer speechSynthesizer = new SpeechSynthesizer(speechConfig);
-
+    public void textToVoice(String text, String voiceName) {
         if (text.isEmpty())
         {
             return;
         }
-
-        SpeechSynthesisResult speechSynthesisResult = speechSynthesizer.SpeakTextAsync(text).get();
-
-        if (speechSynthesisResult.getReason() == ResultReason.SynthesizingAudioCompleted) {
-            System.out.println("Speech synthesized to speaker for text [" + text + "]");
-        }
-        else if (speechSynthesisResult.getReason() == ResultReason.Canceled) {
-            SpeechSynthesisCancellationDetails cancellation = SpeechSynthesisCancellationDetails.fromResult(speechSynthesisResult);
-            System.out.println("CANCELED: Reason=" + cancellation.getReason());
-
-            if (cancellation.getReason() == CancellationReason.Error) {
-                System.out.println("CANCELED: ErrorCode=" + cancellation.getErrorCode());
-                System.out.println("CANCELED: ErrorDetails=" + cancellation.getErrorDetails());
-                System.out.println("CANCELED: Did you set the speech resource key and region values?");
+        SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
+        speechConfig.setSpeechSynthesisVoiceName(voiceName);
+        SpeechSynthesizer speechSynthesizer = new SpeechSynthesizer(speechConfig);
+        try{
+            SpeechSynthesisResult speechSynthesisResult = speechSynthesizer.SpeakTextAsync(text).get();
+            if (speechSynthesisResult.getReason() == ResultReason.SynthesizingAudioCompleted) {
+                System.out.println("Translate to [" + text + "]");
             }
+            else{
+                System.out.println("Text could not be translated to voice");
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
         }
-
         System.exit(0);
     }
 }
